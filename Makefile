@@ -53,19 +53,20 @@ lint: ## 🕵️‍♂️ Run python linter
 	@echo "🕵️‍♂️ Running python linter..."
 	@uv run pyright
 
-chatbot: ## 🤖 Start the Support Ticket Management Chatbot
-	@echo "🤖 Starting the Support Ticket Management Chatbot..."
-	@uv run app/chatbot/ui.py
+run: ## 🚀 Run an agentic system example: make run <example_name>
+	@if [ -z "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
+		echo "❌ Usage: make run <example_name>"; \
+		echo "📋 Available examples:"; \
+		uv run python -m multi_agent_scaffolding --list; \
+		exit 1; \
+	fi
+	@echo "🚀 Running example: $(filter-out $@,$(MAKECMDGOALS))"
+	@uv run python -m multi_agent_scaffolding $(filter-out $@,$(MAKECMDGOALS))
 
-chatbot-simulation: clear-cache ## 🚀 Start a simulated conversation with the Support Ticket Management Chatbot
-	@echo "🚀 Starting the simulation..."
-	@uv run evaluation/chatbot/simulation/chat_simulator.py
+list-examples: ## 📋 List all available examples
+	@echo "📋 Available examples:"
+	@uv run python -m multi_agent_scaffolding --list
 
-chatbot-eval: clear-cache ## 📊 Evaluate the Support Ticket Management Chatbot
-	@echo "📊 Evaluating the Support Ticket Management Chatbot..."
-	@uv run evaluation/chatbot/evaluate.py
-
-dataset-create: ## 🏗️ Generate chatbot evaluation dataset from templates and dummy data
-	@echo "🏗️ Generating chatbot evaluation dataset..."
-	@uv run evaluation/chatbot/ground-truth/generate_eval_dataset.py
-
+# Allow make run <example_name> without error
+%:
+	@:
