@@ -1,0 +1,21 @@
+type: foundry_agent
+name: CalculatorAgent
+description: This agent uses the provided tools to perform calculations based on user queries.
+instructions: Use the provided tools to perform calculations based on user queries.
+model:
+  id: ${AzureAI:ChatModelId}
+  options:
+    temperature: 0.4
+tools:
+  - id: CalculatorPlugin.add_numbers
+    type: function
+  - id: CalculatorPlugin.subtract_numbers
+    type: function
+  - id: CalculatorPlugin.multiply_numbers
+    type: function
+  - id: CalculatorPlugin.divide_numbers
+    type: function
+  - id: CalculatorPlugin.calculate_percentage
+    type: function
+  - id: CalculatorPlugin.format_currency
+    type: function
