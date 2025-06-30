@@ -29,14 +29,14 @@ async def main() -> None:
     ):
         # 1. Create a Kernel instance
         # For declarative agents, the kernel is required to resolve the plugin(s)
-        kernel = Kernel()
-        kernel.add_plugin(FinancialReportPlugin())
+        # kernel = Kernel()
+        # kernel.add_plugin(FinancialReportPlugin())
 
         # 2. Create a Semantic Kernel agent for the Azure AI agent
         agent: AzureAIAgent = await AgentRegistry.create_from_file(
             "src/agents/declarative/financial_report.yaml",
-            kernel=kernel,
-            # plugins=[FinancialReportPlugin()],
+            # kernel=kernel,
+            plugins=[FinancialReportPlugin()],
             settings=settings,
             client=client,
         )
@@ -73,7 +73,7 @@ async def main() -> None:
         finally:
             # 5. Cleanup: Delete the thread and agent
             await thread.delete() if thread else None
-            # await client.agents.delete_agent(agent.id)
+            await client.agents.delete_agent(agent.id)
 
 
 if __name__ == "__main__":

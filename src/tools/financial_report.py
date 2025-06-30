@@ -82,7 +82,7 @@ class FinancialReportPlugin:
             "total_revenue": 385.72,
             "total_net_income": 100.92,
             "annual_growth": "2.8%",
-            "dividend_yield": "0.44%"
+            "dividend_yield": "0.88%"
         }
         
         return json.dumps(mock_data, indent=2)

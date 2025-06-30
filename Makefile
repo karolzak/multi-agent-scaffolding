@@ -1,71 +1,61 @@
 SHELL := /bin/bash
 
-export PATH := $(HOME)/.local/bin:$(PATH)
-
-.PHONY: help setup install clean lint clear-cache test format fmt chatbot dataset-create
+.PHONY: help setup install clean lint test format run list-workflows
 .DEFAULT_GOAL := help
-.ONESHELL: # Applies to every target in the file https://www.gnu.org/software/make/manual/html_node/One-Shell.html
-MAKEFLAGS += --silent # https://www.gnu.org/software/make/manual/html_node/Silent.html
+MAKEFLAGS += --silent
 
-# Load environment file if exists
-ENV_FILE := .env
-ifeq ($(filter $(MAKECMDGOALS),config clean),)
-	ifneq ($(strip $(wildcard $(ENV_FILE))),)
-		ifneq ($(MAKECMDGOALS),config)
-			include $(ENV_FILE)
-			export
-		endif
-	endif
-endif
+help: ## 💬 This help message
+	@grep -E '[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-help: ## 💬 This help message :)
-	grep -E '[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n\n", $$1, $$2}'
-
-setup: ## 🎭 init environment 
-	@echo "🎭 Setting up environment..."
-	@pip install --upgrade pip
-	@pip install -U pip setuptools
-	@pip install uv
+setup: ## 🎭 Initial project setup
+	@echo "🎭 Setting up project..."
+	@command -v uv >/dev/null 2>&1 || { echo "❌ uv not found. Please install: https://docs.astral.sh/uv/getting-started/installation/"; exit 1; }
 	@make install
 
-install: ## 📦 Install python packages
-	@echo "📦 Installing python packages..."
+install: ## 📦 Install dependencies
+	@echo "📦 Installing dependencies..."
 	@uv sync --all-groups
 
-clean: ## 🧹 Clean python packages
-	@echo "🧹 Cleaning python packages..."
+clean: ## 🧹 Clean cache and build artifacts
+	@echo "🧹 Cleaning up..."
 	@uv clean
-	@make clear-cache
-
-clear-cache: ## 🧹 Clean python cache
-	@echo "🧹 Cleaning python cache..."
-	@find . -type d -name __pycache__ -exec rm -r {} \+
+	@find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 test: ## 🧪 Run tests
-	@echo -e "\e[34m$@\e[0m" || true
+	@echo "🧪 Running tests..."
 	@uv run pytest
 
-format fmt: ## 🖊️ Format Python
-	@echo -e "\e[34m$@\e[0m" || true
+format: ## 🖊️ Format code
+	@echo "🖊️ Formatting code..."
 	@uv run ruff format
 
-lint: ## 🕵️‍♂️ Run python linter
-	@echo "🕵️‍♂️ Running python linter..."
+lint: ## � Run linter
+	@echo "� Running linter..."
 	@uv run pyright
 
-run: ## 🚀 Run an agentic system example: make run <example_name>
+run: ## 🚀 Run workflow (usage: make run <name>)
 	@if [ -z "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
-		echo "❌ Usage: make run <example_name>"; \
-		echo "📋 Available examples:"; \
-		uv run python -m multi_agent_scaffolding --list; \
+		echo "❌ Usage: make run <workflow_name>"; \
+		make list-workflows; \
 		exit 1; \
 	fi
-	@echo "🚀 Running example: $(filter-out $@,$(MAKECMDGOALS))"
-	@uv run python -m multi_agent_scaffolding $(filter-out $@,$(MAKECMDGOALS))
+	@example_name="$(filter-out $@,$(MAKECMDGOALS))"; \
+	if [ ! -f "src/workflows/$$example_name.py" ]; then \
+		echo "❌ Workflow '$$example_name' not found"; \
+		make list-workflows; \
+		exit 1; \
+	fi
+	@echo "🚀 Running: $(filter-out $@,$(MAKECMDGOALS))"
+	@uv run python src/workflows/$(filter-out $@,$(MAKECMDGOALS)).py
 
-list-examples: ## 📋 List all available examples
-	@echo "📋 Available examples:"
-	@uv run python -m multi_agent_scaffolding --list
+list-workflows: ## 📋 List available workflows
+	@echo "📋 Available workflows:"
+	@for file in src/workflows/*.py; do \
+		if [ "$$(basename "$$file")" != "__init__.py" ] && [ -f "$$file" ]; then \
+			name=$$(basename "$$file" .py); \
+			printf "  \033[36m%s\033[0m\n" "$$name"; \
+		fi; \
+	done
 
 # Allow make run <example_name> without error
 %:

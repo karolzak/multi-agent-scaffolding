@@ -1,0 +1,2 @@
+# Allow pre-release packages (needed for azure-ai-agents 1.1.0b2)
+prerelease = "allow"

@@ -1,5 +1,4 @@
 import asyncio
-from typing import Annotated
 
 from azure.identity.aio import DefaultAzureCredential
 
@@ -38,8 +37,9 @@ async def main() -> None:
         agent: AzureAIAgent = await AgentRegistry.create_from_file(
             "src/agents/declarative/calculator.yaml",
             kernel=kernel,
+            # plugins=[CalculatorPlugin()],
             settings=settings,
-            client=client,
+            client=client
         )
 
         # 3. Create a thread for the agent
@@ -56,10 +56,11 @@ async def main() -> None:
                     thread=thread,
                 ):
                     print(f"# {response.name}: {response}")
-                    thread = response.thread
+                    thread = response.thread  
         finally:
+            print("# Conversation ended.")
             # 5. Cleanup: Delete the thread and agent
-            await thread.delete() if thread else None
+            # await thread.delete() if thread else None
             # await client.agents.delete_agent(agent.id)
 
 
