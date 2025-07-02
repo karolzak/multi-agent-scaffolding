@@ -35,18 +35,32 @@ lint: ## � Run linter
 
 run: ## 🚀 Run workflow (usage: make run <name>)
 	@if [ -z "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
-		echo "❌ Usage: make run <workflow_name>"; \
+		echo "❌ Usage: make run <workflow_name> [args...]"; \
+		echo "💡 Examples:"; \
+		echo "   make run financial_analysis 'Microsoft Corporation' MSFT"; \
+		echo "   make run calculator"; \
 		make list-workflows; \
 		exit 1; \
 	fi
-	@example_name="$(filter-out $@,$(MAKECMDGOALS))"; \
-	if [ ! -f "src/workflows/$$example_name.py" ]; then \
-		echo "❌ Workflow '$$example_name' not found"; \
+	@workflow_name="$(word 2,$(MAKECMDGOALS))"; \
+	if [ ! -f "src/workflows/$$workflow_name.py" ]; then \
+		echo "❌ Workflow '$$workflow_name' not found"; \
 		make list-workflows; \
 		exit 1; \
+	fi; \
+	echo "🚀 Running workflow: $$workflow_name"; \
+	if [ "$$workflow_name" = "financial_analysis" ]; then \
+		args="$(wordlist 3,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))"; \
+		if [ -n "$$args" ]; then \
+			echo "📊 Company: $$args"; \
+			uv run python src/workflows/financial_analysis.py $$args; \
+		else \
+			echo "💡 Usage: make run financial_analysis 'Company Name' [TICKER]"; \
+			echo "💡 Example: make run financial_analysis 'Microsoft Corporation' MSFT"; \
+		fi; \
+	else \
+		uv run python src/workflows/$$workflow_name.py; \
 	fi
-	@echo "🚀 Running: $(filter-out $@,$(MAKECMDGOALS))"
-	@uv run python src/workflows/$(filter-out $@,$(MAKECMDGOALS)).py
 
 list-workflows: ## 📋 List available workflows
 	@echo "📋 Available workflows:"
