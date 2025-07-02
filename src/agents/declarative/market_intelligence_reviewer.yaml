@@ -20,8 +20,3 @@ model:
   id: ${AzureAI:ChatModelId}
   options:
     temperature: 0.3
-tools:
-  - type: bing_grounding
-    options:
-      tool_connections:
-        - ${AzureAI:BingConnectionId}
