@@ -8,7 +8,7 @@ from azure.ai.agents.models import FilePurpose
 from azure.identity.aio import DefaultAzureCredential
 from semantic_kernel.agents import (
     AgentRegistry, AzureAIAgent, AzureAIAgentSettings,
-    StandardMagenticManager, MagenticOrchestration
+    StandardMagenticManager, MagenticOrchestration, Agent
 )
 from semantic_kernel.agents.runtime import InProcessRuntime
 from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
@@ -41,8 +41,80 @@ def streaming_agent_response_callback(message: StreamingChatMessageContent, is_f
 def agent_response_callback(message: ChatMessageContent) -> None:
     print(f"**{message.name}**\n{message.content}")
 
+async def get_agents(kernel: Kernel, settings: AzureAIAgentSettings, client: object) -> list[Agent]:
+    """Create and return all agents for the financial analysis workflow.
+    
+    Args:
+        kernel: The semantic kernel instance
+        settings: Azure AI Agent settings
+        client: Azure AI Agent client
+        fin_statement_file_id: File ID of the uploaded financial statement
+        
+    Returns:
+        list: List of initialized agents
+    """
+
+    # Create the CSV file path for the sample
+    pdf_file_path = os.path.join("data", "tesco", "tesco_ar25_interactive.pdf")
+    fin_statement_file = await client.agents.files.upload_and_poll(
+        file_path=pdf_file_path,
+        purpose=FilePurpose.AGENTS,
+        filename="tesco_ar25_interactive.pdf"
+    )
+    # Initialize Financial Data Analyst
+    financial_data_analyst = await AgentRegistry.create_from_file(
+        f"src/agents/declarative/financial_data_analyst.yaml",
+        kernel=kernel,
+        settings=settings,
+        client=client,
+        extras={
+            "statement": fin_statement_file.id
+        }
+    )
+    print(f"✅ Initialized Financial Data Analyst agent")
+    
+    # Initialize Financial Data Analysis Reviewer
+    financial_data_analysis_reviewer = await AgentRegistry.create_from_file(
+        f"src/agents/declarative/financial_data_analysis_reviewer.yaml",
+        kernel=kernel,
+        settings=settings,
+        client=client,
+    )
+    print(f"✅ Initialized Financial Data Analysis Reviewer agent")
+    
+    # Initialize Market Intelligence Agent
+    market_intelligence = await AgentRegistry.create_from_file(
+        f"src/agents/declarative/market_intelligence.yaml",
+        kernel=kernel,
+        settings=settings,
+        client=client,
+        extras={
+            "BingGroundingConnectionName": os.environ.get("BING_GROUNDING_CONNECTION_ID")
+        }
+    )
+    print(f"✅ Initialized Market Intelligence agent")
+    
+    # Initialize Market Intelligence Reviewer
+    market_intelligence_reviewer = await AgentRegistry.create_from_file(
+        f"src/agents/declarative/market_intelligence_reviewer.yaml",
+        kernel=kernel,
+        settings=settings,
+        client=client,
+    )
+    print(f"✅ Initialized Market Intelligence Reviewer agent")
+
+    return [
+        financial_data_analyst,
+        financial_data_analysis_reviewer,
+        market_intelligence,
+        market_intelligence_reviewer
+    ]
+
 async def main():
     """Main function to run the agents."""
+    fin_statement_file = None
+    agents = []
+    
     # 0. Initialize Agents
     async with (
         DefaultAzureCredential() as creds,
@@ -54,64 +126,9 @@ async def main():
             settings = AzureAIAgentSettings(
                 model_deployment_name=os.environ.get("AZURE_AI_AGENT_MODEL_DEPLOYMENT_NAME", ""))
             # Load all predefined agents
-
-            # Create the CSV file path for the sample
-            pdf_file_path = os.path.join("data", "tesco", "tesco_ar25_interactive.pdf")
-            fin_statement_file = await client.agents.files.upload_and_poll(
-                file_path=pdf_file_path,
-                purpose=FilePurpose.AGENTS,
-                filename="tesco_ar25_interactive.pdf"
-            )
-
-            financial_data_analyst = await AgentRegistry.create_from_file(
-                f"src/agents/declarative/financial_data_analyst.yaml",
-                kernel=kernel,
-                settings=settings,
-                client=client,
-                extras={
-                    "statement": fin_statement_file.id
-                }
-            )
-            print(f"✅ Initialized Financial Data Analyst agent")
-            
-            financial_data_analysis_reviewer = await AgentRegistry.create_from_file(
-                f"src/agents/declarative/financial_data_analysis_reviewer.yaml",
-                kernel=kernel,
-                settings=settings,
-                client=client,
-            )
-            print(f"✅ Initialized Financial Data Analysis Reviewer agent")
-            
-            market_intelligence = await AgentRegistry.create_from_file(
-                f"src/agents/declarative/market_intelligence.yaml",
-                kernel=kernel,
-                settings=settings,
-                client=client,
-                extras={
-                    "BingGroundingConnectionName": os.environ.get("BING_GROUNDING_CONNECTION_ID")  # Replace with your actual connection ID
-                }
-            )
-            print(f"✅ Initialized Market Intelligence agent")
-            
-            market_intelligence_reviewer = await AgentRegistry.create_from_file(
-                f"src/agents/declarative/market_intelligence_reviewer.yaml",
-                kernel=kernel,
-                settings=settings,
-                client=client,
-                # extras={
-                #     "BingConnectionId": os.environ.get("BING_GROUNDING_CONNECTION_NAME")  # Replace with your actual connection ID
-                # }
-            )
-            print(f"✅ Initialized Market Intelligence Reviewer agent")
+            agents = await get_agents(kernel, settings, client)
 
             # Create group chat with built-in orchestration
-            agents = [
-                financial_data_analyst,
-                financial_data_analysis_reviewer,
-                market_intelligence,
-                market_intelligence_reviewer
-            ]
-
             chat_completion_service = AzureChatCompletion(
                 deployment_name=os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o"), 
                 api_key=os.environ.get("AZURE_OPENAI_API_KEY"),
@@ -164,7 +181,7 @@ async def main():
                 f.write(f"Financial Analysis Report for Tesco\n")
                 f.write(f"Generated on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
                 f.write("### Analysis Results:\n")
-                f.write(value)
+                f.write(str(value))
                 print(f"✅ Report saved to {output_file_path}")
             
             # Stop the runtime when done
@@ -175,7 +192,8 @@ async def main():
             raise
 
         finally:
-            await client.agents.files.delete(fin_statement_file.id)
+            if fin_statement_file is not None:
+                await client.agents.files.delete(fin_statement_file.id)
             for agent in agents:
                 await client.agents.delete_agent(agent.id)
 
