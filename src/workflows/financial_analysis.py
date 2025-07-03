@@ -1,194 +1,183 @@
-"""
-Multi-Agent Financial Analysis Workflow
+# Copyright (c) Microsoft. All rights reserved.
 
-Real-time orchestration of Azure AI agents for comprehensive financial analysis.
-"""
-
+import os
 import asyncio
-from pathlib import Path
-from typing import Any
+import datetime
 
+from azure.ai.agents.models import FilePurpose
 from azure.identity.aio import DefaultAzureCredential
-from semantic_kernel.agents import AgentRegistry, AzureAIAgent, AzureAIAgentSettings
+from semantic_kernel.agents import (
+    AgentRegistry, AzureAIAgent, AzureAIAgentSettings,
+    StandardMagenticManager, MagenticOrchestration
+)
+from semantic_kernel.agents.runtime import InProcessRuntime
+from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
 from semantic_kernel.kernel import Kernel
+from semantic_kernel.contents import StreamingChatMessageContent, ChatMessageContent
 
-from src.common.data_manager import FinancialDataManager, create_financial_data_summary
+# load .env variables
+from dotenv import load_dotenv
+load_dotenv()
 
+# Flag to indicate if a new message is being received
+is_new_message = True
 
-class FinancialAnalysisWorkflow:
-    """Real-time multi-agent financial analysis orchestrator."""
-    
-    def __init__(self, data_root: str = "data"):
-        self.data_manager = FinancialDataManager(data_root)
-        self.agents: dict[str, AzureAIAgent] = {}
-        self.client = None
-        
-    async def __aenter__(self):
-        """Initialize agents and resources."""
-        await self._initialize_agents()
-        return self
-        
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        """Cleanup resources."""
-        if self.client:
-            await self.client.__aexit__(None, None, None)
-    
-    async def _initialize_agents(self) -> None:
-        """Initialize all predefined agents with Azure AI Foundry."""
-        try:
-            settings = AzureAIAgentSettings(model_deployment_name="gpt-4o")
-            credential = DefaultAzureCredential()
-            self.client = await AzureAIAgent.create_client(credential=credential).__aenter__()
-            kernel = Kernel()
-            
-            # Load all predefined agents
-            agent_files = [
-                "financial_orchestrator.yaml",
-                "financial_data_analyst.yaml", 
-                "market_intelligence.yaml",
-                "research_analyst.yaml"
-            ]
-            
-            for agent_file in agent_files:
-                agent_name = agent_file.replace(".yaml", "")
-                self.agents[agent_name] = await AgentRegistry.create_from_file(
-                    f"src/agents/declarative/{agent_file}",
-                    kernel=kernel,
-                    settings=settings,
-                    client=self.client
-                )
-            
-            print(f"✅ Initialized {len(self.agents)} Azure AI agents")
-        except Exception as e:
-            raise RuntimeError(f"Failed to initialize agents: {e}")
-    
-    async def analyze_company(self, company_name: str, ticker: str | None = None) -> dict[str, Any]:
-        """
-        Perform comprehensive financial analysis using Azure AI agents.
-        
-        Args:
-            company_name: Company to analyze
-            ticker: Optional ticker symbol
-            
-        Returns:
-            Analysis results from agent orchestration
-        """
-        print(f"🚀 Starting multi-agent analysis for {company_name}")
-        
-        # Discover available financial data
-        dataset = self.data_manager.get_dataset(company_name)
-        data_context = ""
-        
-        if dataset:
-            data_summary = create_financial_data_summary(dataset)
-            print(f"📁 Found local data: {len(dataset.pdf_files)} PDFs, {len(dataset.excel_files)} Excel files")
-            
-            data_context = f"""
-            Available Financial Data:
-            - Company: {dataset.company_name}
-            - PDF Reports: {[Path(p).name for p in data_summary['files']['pdfs']]}
-            - Excel Files: {[Path(p).name for p in data_summary['files']['excel']]}
-            - Years Covered: {data_summary['available_years']}
-            - Data Directory: {data_summary['data_directory']}
-            """
-        else:
-            print(f"⚠️ No local data found for {company_name} - using public information")
-            data_context = f"No local financial data available for {company_name}. Analyze using public information and web search."
-        
-        # Execute agent-based analysis
-        return await self._orchestrate_analysis(company_name, ticker, data_context)
-    
-    async def _orchestrate_analysis(self, company_name: str, ticker: str | None, data_context: str) -> dict[str, Any]:
-        """Orchestrate the analysis using Azure AI agents."""
-        try:
-            # Use financial orchestrator as the main coordinator
-            orchestrator = self.agents["financial_orchestrator"]
-            
-            query = f"""
-            Please coordinate a comprehensive financial analysis for {company_name} {f"(ticker: {ticker})" if ticker else ""}.
-            
-            {data_context}
-            
-            Please orchestrate the following analysis:
-            1. Financial data analysis (use available documents if provided)
-            2. Market intelligence gathering using web search
-            3. Research insights and investment recommendations
-            4. Risk assessment and ESG evaluation
-            
-            Coordinate with other specialized agents as needed and provide a comprehensive investment report.
-            """
-            
-            print(f"🤖 Orchestrating analysis with Azure AI agents...")
-            
-            response_text = ""
-            thread = None
-            
-            async for response in orchestrator.invoke(messages=query, thread=thread):
-                response_text += str(response) + "\n"
-                thread = response.thread
-            
-            print(f"✅ Agent orchestration completed")
-            
-            return {
-                "company_name": company_name,
-                "ticker": ticker,
-                "analysis_date": "2025-06-30",
-                "orchestrator_report": response_text,
-                "analysis_method": "Azure AI Agent Orchestration",
-                "agents_used": list(self.agents.keys()),
-                "data_sources_available": "local data" in data_context.lower()
-            }
-            
-        except Exception as e:
-            print(f"❌ Agent orchestration failed: {e}")
-            raise RuntimeError(f"Financial analysis failed: {e}")
+def streaming_agent_response_callback(message: StreamingChatMessageContent, is_final: bool) -> None:
+    """Observer function to print the messages from the agents.
 
-
-async def analyze_company_financial_data(company_name: str, ticker: str | None = None, data_root: str = "data") -> dict[str, Any]:
-    """
-    Entry point for multi-agent financial analysis.
-    
     Args:
-        company_name: Company to analyze
-        ticker: Optional ticker symbol
-        data_root: Root directory for financial data
-        
-    Returns:
-        Comprehensive financial analysis results
+        message (StreamingChatMessageContent): The streaming message content from the agent.
+        is_final (bool): Indicates if this is the final part of the message.
     """
-    async with FinancialAnalysisWorkflow(data_root) as workflow:
-        return await workflow.analyze_company(company_name, ticker)
+    global is_new_message
+    if is_new_message:
+        print(f"# {message.name}")
+        is_new_message = False
+    print(message.content, end="", flush=True)
+    if is_final:
+        print()
+        is_new_message = True
 
+def agent_response_callback(message: ChatMessageContent) -> None:
+    print(f"**{message.name}**\n{message.content}")
 
 async def main():
-    """Main execution for direct script usage."""
-    import sys
-    
-    if len(sys.argv) < 2:
-        print("Usage: python financial_analysis.py <company_name> [ticker]")
-        print("Example: python financial_analysis.py 'Microsoft Corporation' MSFT")
-        return
-    
-    company_name = sys.argv[1]
-    ticker = sys.argv[2] if len(sys.argv) > 2 else None
-    
-    try:
-        result = await analyze_company_financial_data(company_name, ticker)
-        print(f"\n✅ Analysis completed for {result['company_name']}")
-        print(f"🤖 Agents used: {result['agents_used']}")
-        print(f"� Analysis method: {result['analysis_method']}")
-        print(f"📁 Local data available: {result['data_sources_available']}")
-        print(f"\n📋 Orchestrator Report:")
-        print("-" * 60)
-        print(result['orchestrator_report'])
-        
-    except Exception as e:
-        print(f"❌ Analysis failed: {e}")
-        print("💡 Ensure Azure AI Foundry is properly configured with:")
-        print("   - Azure OpenAI deployment (gpt-4o)")
-        print("   - Proper authentication (Azure CLI or environment variables)")
-        print("   - Web search enabled in Azure AI Foundry")
+    """Main function to run the agents."""
+    # 0. Initialize Agents
+    async with (
+        DefaultAzureCredential() as creds,
+        AzureAIAgent.create_client(credential=creds) as client,
+    ):
+        try:
+            kernel = Kernel()
 
+            settings = AzureAIAgentSettings(
+                model_deployment_name=os.environ.get("AZURE_AI_AGENT_MODEL_DEPLOYMENT_NAME", ""))
+            # Load all predefined agents
+
+            # Create the CSV file path for the sample
+            pdf_file_path = os.path.join("data", "tesco", "tesco_ar25_interactive.pdf")
+            fin_statement_file = await client.agents.files.upload_and_poll(
+                file_path=pdf_file_path,
+                purpose=FilePurpose.AGENTS,
+                filename="tesco_ar25_interactive.pdf"
+            )
+
+            financial_data_analyst = await AgentRegistry.create_from_file(
+                f"src/agents/declarative/financial_data_analyst.yaml",
+                kernel=kernel,
+                settings=settings,
+                client=client,
+                extras={
+                    "statement": fin_statement_file.id
+                }
+            )
+            print(f"✅ Initialized Financial Data Analyst agent")
+            
+            financial_data_analysis_reviewer = await AgentRegistry.create_from_file(
+                f"src/agents/declarative/financial_data_analysis_reviewer.yaml",
+                kernel=kernel,
+                settings=settings,
+                client=client,
+            )
+            print(f"✅ Initialized Financial Data Analysis Reviewer agent")
+            
+            market_intelligence = await AgentRegistry.create_from_file(
+                f"src/agents/declarative/market_intelligence.yaml",
+                kernel=kernel,
+                settings=settings,
+                client=client,
+                extras={
+                    "BingGroundingConnectionName": os.environ.get("BING_GROUNDING_CONNECTION_ID")  # Replace with your actual connection ID
+                }
+            )
+            print(f"✅ Initialized Market Intelligence agent")
+            
+            market_intelligence_reviewer = await AgentRegistry.create_from_file(
+                f"src/agents/declarative/market_intelligence_reviewer.yaml",
+                kernel=kernel,
+                settings=settings,
+                client=client,
+                # extras={
+                #     "BingConnectionId": os.environ.get("BING_GROUNDING_CONNECTION_NAME")  # Replace with your actual connection ID
+                # }
+            )
+            print(f"✅ Initialized Market Intelligence Reviewer agent")
+
+            # Create group chat with built-in orchestration
+            agents = [
+                financial_data_analyst,
+                financial_data_analysis_reviewer,
+                market_intelligence,
+                market_intelligence_reviewer
+            ]
+
+            chat_completion_service = AzureChatCompletion(
+                deployment_name=os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o"), 
+                api_key=os.environ.get("AZURE_OPENAI_API_KEY"),
+                endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT")
+            )
+            manager = StandardMagenticManager(chat_completion_service=chat_completion_service)
+
+            magentic_orchestration = MagenticOrchestration(
+                members=agents,
+                manager=manager,
+                agent_response_callback=agent_response_callback,
+                streaming_agent_response_callback=streaming_agent_response_callback
+            )
+
+            runtime = InProcessRuntime()
+            runtime.start()
+
+            orchestration_result = await magentic_orchestration.invoke(
+                task=(
+                    """
+                    Help me to create financial analysis report for Tesco for year 2025.
+                    Your responsibilities:
+                    1. Coordinate data collection from various specialized agents:
+                    2. Synthesize results from Financial Data Analyst, Financial Data Analysis Reviewer, Market Intelligence Agent, Market Intelligence Reviewer
+                    3. Ensure all agents complete their tasks and integrate results effectively
+                    4. Generate final comprehensive financial analysis reports
+                    
+                    When coordinating the workflow:
+                    - Start with company information gathering
+                    - Coordinate parallel execution of financial analysis and market intelligence gathering
+                    - Ensure all agent results are properly integrated
+                    - Generate clear, actionable credit application recommendations for the company you are analyzing
+                    - Provide confidence levels for all assessments
+                    - Handle any errors or exceptions gracefully, ensuring the workflow can recover and continue          
+                    """
+                ),
+                runtime=runtime,
+            )
+
+            value = await orchestration_result.get()
+            print(f"***** Final Result *****\n{value}")
+
+            print("✅ Workflow completed successfully")
+
+            # dump final results to a file under outputs/datetime/financial_analysis_report.md
+            output_dir = os.path.join("outputs", datetime.datetime.now().strftime("%Y%m%d_%H%M"))
+            os.makedirs(output_dir, exist_ok=True)
+            output_file_path = os.path.join(output_dir, "financial_analysis_report.md")
+            with open(output_file_path, "w") as f:
+                f.write(f"Financial Analysis Report for Tesco\n")
+                f.write(f"Generated on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                f.write("### Analysis Results:\n")
+                f.write(value)
+                print(f"✅ Report saved to {output_file_path}")
+            
+            # Stop the runtime when done
+            await runtime.stop_when_idle()
+
+        except Exception as e:
+            print(f"❌ An error occurred: {e}")
+            raise
+
+        finally:
+            await client.agents.files.delete(fin_statement_file.id)
+            for agent in agents:
+                await client.agents.delete_agent(agent.id)
 
 if __name__ == "__main__":
     asyncio.run(main())
