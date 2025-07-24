@@ -4,11 +4,6 @@
     "features": {
         "ghcr.io/va-h/devcontainers-features/uv": {}
     },
-    // Add environment variables to the container.
-	// "runArgs": [
-	// 	"--env-file",
-	// 	".env"
-	// ],
     "customizations": {
         "vscode": {
             "extensions": [
