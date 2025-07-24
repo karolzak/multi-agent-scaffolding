@@ -2,12 +2,13 @@
     "name": "multi-agent-scaffolding",
     "image": "mcr.microsoft.com/devcontainers/python:3.11",
     "features": {
+        "ghcr.io/va-h/devcontainers-features/uv": {}
     },
     // Add environment variables to the container.
-	"runArgs": [
-		"--env-file",
-		".env"
-	],
+	// "runArgs": [
+	// 	"--env-file",
+	// 	".env"
+	// ],
     "customizations": {
         "vscode": {
             "extensions": [
@@ -16,7 +17,10 @@
                 "hashicorp.terraform",
                 "ms-vscode.makefile-tools",
                 "davidanson.vscode-markdownlint"
-            ]
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": ".venv/bin/python"
+            }
         }
     },
     "postCreateCommand": "make setup",
