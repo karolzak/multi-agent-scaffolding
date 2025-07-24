@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help setup install clean lint test format run list-workflows
+.PHONY: help setup install clean lint test format run list-workflows check-env
 .DEFAULT_GOAL := help
 MAKEFLAGS += --silent
 
@@ -9,12 +9,24 @@ help: ## 💬 This help message
 
 setup: ## 🎭 Initial project setup
 	@echo "🎭 Setting up project..."
+	@pip install --upgrade pip
+	@pip install uv
 	@command -v uv >/dev/null 2>&1 || { echo "❌ uv not found. Please install: https://docs.astral.sh/uv/getting-started/installation/"; exit 1; }
 	@make install
 
 install: ## 📦 Install dependencies
 	@echo "📦 Installing dependencies..."
 	@uv sync --all-groups
+
+check-env: ## 🔍 Check if .env file exists
+	@echo "🔍 Checking for .env file..."
+	@if [ ! -f .env ]; then \
+		echo "❌ .env file not found"; \
+		echo "💡 Please create a .env file with your environment variables"; \
+		exit 1; \
+	else \
+		echo "✅ .env file found"; \
+	fi
 
 clean: ## 🧹 Clean cache and build artifacts
 	@echo "🧹 Cleaning up..."
@@ -33,7 +45,7 @@ lint: ## � Run linter
 	@echo "� Running linter..."
 	@uv run pyright
 
-run: ## 🚀 Run workflow (usage: make run <name>)
+run: check-env ## 🚀 Run workflow (usage: make run <name>)
 	@if [ -z "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
 		echo "❌ Usage: make run <workflow_name> [args...]"; \
 		echo "💡 Examples:"; \
